@@ -2,7 +2,8 @@ import { DerivedTask, Task } from '@/types';
 
 export function computeROI(revenue: number, timeTaken: number): number | null {
   if (!Number.isFinite(revenue)) return null;
-  if (!Number.isFinite(timeTaken) || timeTaken <= 0) return null;
+  if (!Number.isFinite(timeTaken)) return null;
+  if (timeTaken === 0) return 0;
   return revenue / timeTaken;
 }
 
