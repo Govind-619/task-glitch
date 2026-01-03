@@ -19,10 +19,11 @@ interface UseTasksState {
   derivedSorted: DerivedTask[];
   metrics: Metrics;
   lastDeleted: Task | null;
-  addTask: (task: Omit<Task, 'id'> & { id?: string }) => void;
+  addTask: (task: Omit<Task, 'id' | 'createdAt' | 'completedAt'> & { id?: string }) => void;
   updateTask: (id: string, patch: Partial<Task>) => void;
   deleteTask: (id: string) => void;
   undoDelete: () => void;
+  resetLastDeleted: () => void;
 }
 
 const INITIAL_METRICS: Metrics = {
@@ -38,7 +39,7 @@ export function useTasks(): UseTasksState {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [lastDeleted, setLastDeleted] = useState<Task | null>(null);
+  const [lastDeleted, setLastDeleted] = useState<{ task: Task; index: number } | null>(null);
   const fetchedRef = useRef(false);
 
   function normalizeTasks(input: any[]): Task[] {
@@ -64,6 +65,7 @@ export function useTasks(): UseTasksState {
   useEffect(() => {
     let isMounted = true;
     async function load() {
+      if (fetchedRef.current) return;
       console.log("loadTasks called")
       try {
         const res = await fetch('/tasks.json');
@@ -111,7 +113,7 @@ export function useTasks(): UseTasksState {
     return { totalRevenue, totalTimeTaken, timeEfficiencyPct, revenuePerHour, averageROI, performanceGrade };
   }, [tasks]);
 
-  const addTask = useCallback((task: Omit<Task, 'id'> & { id?: string }) => {
+  const addTask = useCallback((task: Omit<Task, 'id' | 'createdAt' | 'completedAt'> & { id?: string }) => {
     setTasks(prev => {
       const id = task.id ?? crypto.randomUUID();
       const timeTaken = task.timeTaken <= 0 ? 1 : task.timeTaken; // auto-correct
@@ -138,20 +140,54 @@ export function useTasks(): UseTasksState {
   }, []);
 
   const deleteTask = useCallback((id: string) => {
-    setTasks(prev => {
-      const target = prev.find(t => t.id === id) || null;
-      setLastDeleted(target);
-      return prev.filter(t => t.id !== id);
-    });
-  }, []);
+    // Determine the task to be deleted from the current state
+    const index = tasks.findIndex(t => t.id === id);
+    if (index === -1) return;
+
+    console.log('[useTasks] deleteTask: setting lastDeleted:', tasks[index], 'at index', index);
+    setLastDeleted({ task: tasks[index], index });
+
+    // Update tasks state
+    setTasks(prev => prev.filter(t => t.id !== id));
+  }, [tasks]);
 
   const undoDelete = useCallback(() => {
-    if (!lastDeleted) return;
-    setTasks(prev => [...prev, lastDeleted]);
+    setTasks(prev => {
+      if (!lastDeleted) return prev;
+
+      // Prevent duplicate restore
+      if (prev.some(t => t.id === lastDeleted.task.id)) return prev;
+
+      const next = [...prev];
+      next.splice(
+        Math.min(lastDeleted.index, next.length),
+        0,
+        lastDeleted.task
+      );
+      return next;
+    });
+
     setLastDeleted(null);
   }, [lastDeleted]);
 
-  return { tasks, loading, error, derivedSorted, metrics, lastDeleted, addTask, updateTask, deleteTask, undoDelete };
+
+  const resetLastDeleted = useCallback(() => {
+    setLastDeleted(null);
+  }, []);
+
+  return {
+    tasks,
+    loading,
+    error,
+    derivedSorted,
+    metrics,
+    lastDeleted: lastDeleted?.task ?? null,
+    addTask,
+    updateTask,
+    deleteTask,
+    undoDelete,
+    resetLastDeleted
+  };
 }
 
 
